@@ -1,0 +1,91 @@
+{
+  "topic_name": "Aho-Corasick Algorithm",
+  "subject": "Algorithm of the Day: Aho-Corasick Multi-Pattern Search",
+  "introduction": "Imagine you're building a content moderation system that needs to scan every user message for thousands of banned words simultaneously, or you're developing an intrusion detection system that must match incoming network packets against tens of thousands of known malware signatures in real time. Searching for each pattern one at a time would be painfully slow. The Aho-Corasick algorithm solves this problem elegantly: given a set of pattern strings and an input text, it finds all occurrences of all patterns in a single pass through the text, regardless of how many patterns you have.\n\nPublished in 1975 by Alfred Aho and Margaret Corasick, this algorithm is one of the most beautiful constructions in string matching. It builds a finite-state automaton from the set of patterns by combining a trie (prefix tree) with two auxiliary functions \u2014 a failure function (inspired by the Knuth-Morris-Pratt algorithm) and an output function. The result is a machine that processes each character of the input text exactly once, transitioning between states and emitting matches as they occur. Its time complexity is O(n + m + z) where n is the text length, m is the total length of all patterns, and z is the number of matches \u2014 meaning it's linear in input size plus output size.\n\nThe algorithm remains a workhorse in production systems today. It powers the pattern matching in tools like `grep` (specifically `fgrep`), antivirus scanners, network intrusion detection systems like Snort, and bioinformatics tools that search for DNA motifs. If you've ever needed to search for multiple strings at once, Aho-Corasick is very likely the right tool for the job.",
+  "how_it_works": [
+    {
+      "type": "text",
+      "content": "The Aho-Corasick algorithm operates in two phases: a preprocessing phase that builds an automaton from the set of patterns, and a search phase that feeds the input text through this automaton. The automaton is constructed in three steps: (1) build a trie from all patterns, (2) compute failure links for every node using BFS, and (3) compute dictionary suffix links (also called output links) that chain together nodes whose suffixes are also complete patterns. Once built, the automaton processes the text character by character, following goto transitions when possible and failure links otherwise."
+    },
+    {
+      "type": "text",
+      "content": "Step 1 \u2014 Build the Trie (Goto Function): Insert every pattern string into a trie. Each edge is labeled with a character, and each node represents a prefix of one or more patterns. Nodes where a pattern ends are marked as output nodes. The root represents the empty string. For example, inserting the patterns 'he', 'she', 'his', and 'hers' creates a trie with branches for 'h' and 's' from the root."
+    },
+    {
+      "type": "diagram",
+      "caption": "Trie built from patterns: {he, she, his, hers}",
+      "content": "                  (root)\n                 /      \\\n                h        s\n               / \\        \\\n              e*  i        h\n              |    \\        \\\n              r     s*       e*\n              |              |\n              s*             r\n                             |\n                             s*\n\n  * = output node (complete pattern ends here)\n\n  Paths from root:\n    h -> e          = 'he'\n    h -> e -> r -> s = 'hers'\n    h -> i -> s      = 'his'\n    s -> h -> e      = 'she'"
+    },
+    {
+      "type": "text",
+      "content": "Step 2 \u2014 Compute Failure Links: The failure link of a node points to the longest proper suffix of that node's string that is also a prefix of some pattern in the trie. This is computed via BFS starting from the root. All depth-1 nodes have their failure link pointing to the root. For deeper nodes, we follow the parent's failure link and try to extend it with the current character; if that fails, we follow that node's failure link, and so on until we either find a match or reach the root. This is directly analogous to the failure function in KMP, but generalized to multiple patterns."
+    },
+    {
+      "type": "diagram",
+      "caption": "Failure links (dashed arrows) for key nodes",
+      "content": "  Node labeling: each node shows the string it represents.\n\n    ''(root) <---fail--- 'h'\n    ''(root) <---fail--- 's'\n    ''(root) <---fail--- 'he'  (no suffix of 'he' is a trie prefix\n                                 other than '' since 'e' is not a root child)\n    'h'      <---fail--- 'sh'  (suffix 'h' is a prefix in the trie)\n    'he'     <---fail--- 'she' (suffix 'he' matches trie node 'he')\n\n  When scanning and we can't follow a goto edge, we follow\n  the failure link and retry \u2014 just like KMP but on a trie."
+    },
+    {
+      "type": "text",
+      "content": "Step 3 \u2014 Dictionary Suffix Links (Output Links): Some nodes may not themselves be output nodes, but their failure chain may pass through an output node. The dictionary suffix link of a node points to the nearest ancestor (via failure links) that is an output node. During search, when we arrive at any node, we report not only that node's pattern (if any) but also walk the dictionary suffix links to report all patterns that are suffixes of the current match. For example, when we reach the node for 'she', the failure link goes to 'he', which is itself an output node \u2014 so both 'she' and 'he' are reported."
+    },
+    {
+      "type": "text",
+      "content": "Search Phase: We start at the root and process the text one character at a time. At each step, we attempt to follow the goto edge for the current character. If no such edge exists, we follow the failure link and retry (the root always has a self-loop for unmatched characters). When we arrive at a node, we collect all outputs by following the dictionary suffix links. Because each character causes at most a constant amortized number of state transitions (the failure links can only decrease depth, which is bounded), the entire search runs in O(n + z) time where n is the text length and z is the number of pattern occurrences found."
+    }
+  ],
+  "example": {
+    "description": "Let's build an Aho-Corasick automaton for the patterns ['he', 'she', 'his', 'hers'] and search the text 'ahishers'. We expect to find: 'his' at position 1, 'she' at position 3, 'he' at position 4, 'hers' at position 4. The implementation below uses a dictionary-based trie with BFS-computed failure links and dictionary suffix links.",
+    "code": "from collections import deque, defaultdict\n\nclass AhoCorasick:\n    def __init__(self):\n        # Each node is an integer; node 0 is root.\n        self.goto = [{}]          # goto[state][char] -> next state\n        self.fail = [0]           # failure link for each state\n        self.output = [[]]        # list of pattern indices that end here\n        self.dict_suffix = [0]    # dictionary suffix link\n\n    def _add_pattern(self, pattern, index):\n        \"\"\"Insert a pattern into the trie.\"\"\"\n        state = 0\n        for ch in pattern:\n            if ch not in self.goto[state]:\n                new_state = len(self.goto)\n                self.goto.append({})\n                self.fail.append(0)\n                self.output.append([])\n                self.dict_suffix.append(0)\n                self.goto[state][ch] = new_state\n            state = self.goto[state][ch]\n        self.output[state].append(index)\n\n    def build(self, patterns):\n        \"\"\"Build the automaton from a list of patterns.\"\"\"\n        for i, p in enumerate(patterns):\n            self._add_pattern(p, i)\n\n        # BFS to compute failure links and dictionary suffix links\n        queue = deque()\n\n        # Initialize: depth-1 nodes have fail -> root\n        for ch, s in self.goto[0].items():\n            self.fail[s] = 0\n            self.dict_suffix[s] = 0\n            queue.append(s)\n\n        while queue:\n            curr = queue.popleft()\n            for ch, next_state in self.goto[curr].items():\n                queue.append(next_state)\n\n                # Walk up failure links to find the fail state\n                fallback = self.fail[curr]\n                while fallback != 0 and ch not in self.goto[fallback]:\n                    fallback = self.fail[fallback]\n\n                self.fail[next_state] = self.goto[fallback].get(ch, 0)\n                # Avoid self-loop\n                if self.fail[next_state] == next_state:\n                    self.fail[next_state] = 0\n\n                # Dictionary suffix link: nearest output node via fail chain\n                f = self.fail[next_state]\n                if self.output[f]:\n                    self.dict_suffix[next_state] = f\n                else:\n                    self.dict_suffix[next_state] = self.dict_suffix[f]\n\n    def search(self, text, patterns):\n        \"\"\"Search text and return list of (position, pattern) matches.\"\"\"\n        results = []\n        state = 0\n\n        for i, ch in enumerate(text):\n            # Follow failure links until we can take a goto edge\n            while state != 0 and ch not in self.goto[state]:\n                state = self.fail[state]\n            state = self.goto[state].get(ch, 0)\n\n            # Collect all outputs at this state (and via dict suffix links)\n            temp = state\n            while temp != 0:\n                for pat_idx in self.output[temp]:\n                    pat = patterns[pat_idx]\n                    start_pos = i - len(pat) + 1\n                    results.append((start_pos, pat))\n                temp = self.dict_suffix[temp]\n\n        return results\n\n\n# --- Worked example ---\npatterns = ['he', 'she', 'his', 'hers']\ntext = 'ahishers'\n\nac = AhoCorasick()\nac.build(patterns)\nmatches = ac.search(text, patterns)\n\nprint(f\"Text: '{text}'\")\nprint(f\"Patterns: {patterns}\")\nprint(f\"Matches found:\")\nfor pos, pat in sorted(matches):\n    print(f\"  '{pat}' at position {pos}\")\n\n# Output:\n# Text: 'ahishers'\n# Patterns: ['he', 'she', 'his', 'hers']\n# Matches found:\n#   'his' at position 1\n#   'she' at position 3\n#   'he' at position 4\n#   'hers' at position 4"
+  },
+  "complexity": {
+    "summary": "The Aho-Corasick algorithm has excellent complexity characteristics. Building the automaton takes O(m * k) time where m is the total length of all patterns and k is the alphabet size (for the trie construction and BFS failure link computation). The search phase takes O(n + z) time where n is the length of the text and z is the total number of pattern occurrences reported. This means the algorithm's running time is independent of the number of patterns \u2014 whether you search for 10 or 10,000 patterns, the search time depends only on the text length and the number of matches. Space usage is O(m * k) for the automaton in the worst case, though using hash maps for transitions (as in our implementation) reduces this to O(m) on average for sparse alphabets.",
+    "time": {
+      "best": "O(n + m) \u2014 building O(m), searching O(n) with no matches",
+      "average": "O(n + m + z) \u2014 z is the number of matches reported",
+      "worst": "O(n + m + z) \u2014 linear in input size plus output size"
+    },
+    "space": "O(m * k) worst case for automaton (m = total pattern length, k = alphabet size); O(m) with hash-map transitions"
+  },
+  "use_cases": [
+    "Network Intrusion Detection Systems (e.g., Snort): Scanning network packets against thousands of known attack signatures simultaneously in real time, where per-packet latency is critical.",
+    "Antivirus and Malware Scanning: Matching file contents against a large database of known malware byte signatures \u2014 the same approach used by ClamAV and similar engines.",
+    "Bioinformatics DNA/Protein Motif Search: Searching genomic sequences for thousands of known motifs, binding sites, or primers in a single linear scan, which is far faster than running individual searches.",
+    "Content Moderation and Sensitive Word Filtering: Scanning user-generated content on social platforms against dictionaries of prohibited words, profanity, or PII patterns at high throughput.",
+    "Text Editors and IDE Search (e.g., fgrep): The `fgrep` utility (fixed-string grep) uses Aho-Corasick to search for multiple literal strings in files efficiently.",
+    "Spam and Phishing Detection: Email security gateways use multi-pattern matching to scan message bodies for known phishing URLs, spam keywords, and social engineering phrases."
+  ],
+  "references": [
+    {
+      "title": "Efficient String Matching: An Aid to Bibliographic Search",
+      "authors": "Alfred V. Aho, Margaret J. Corasick",
+      "url": "https://dl.acm.org/doi/10.1145/360825.360855",
+      "description": "The original 1975 paper introducing the Aho-Corasick algorithm for multi-pattern string matching."
+    },
+    {
+      "title": "Introduction to Algorithms (CLRS), Chapter 32: String Matching",
+      "authors": "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein",
+      "description": "The classic algorithms textbook covering string matching foundations including KMP, which directly motivates the failure function used in Aho-Corasick."
+    },
+    {
+      "title": "Aho-Corasick Algorithm \u2014 Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Aho%E2%80%93Corasick_algorithm",
+      "description": "A comprehensive overview of the algorithm, its construction steps, and applications with pseudocode."
+    },
+    {
+      "title": "Flexible Pattern Matching in Strings",
+      "authors": "Gonzalo Navarro, Mathieu Raffinot",
+      "description": "An excellent book dedicated to string matching algorithms, providing in-depth coverage of Aho-Corasick alongside other multi-pattern and approximate matching techniques."
+    },
+    {
+      "title": "Aho-Corasick Automaton \u2014 CP-Algorithms",
+      "url": "https://cp-algorithms.com/string/aho_corasick.html",
+      "description": "A practical, implementation-focused tutorial on Aho-Corasick aimed at competitive programmers, with clear code examples and optimization tips."
+    },
+    {
+      "title": "Scalable Pattern Matching for High Speed Networks (Snort)",
+      "authors": "Marc Norton",
+      "description": "A technical discussion of how Aho-Corasick is used and optimized in the Snort intrusion detection system for real-time packet inspection."
+    }
+  ]
+}
