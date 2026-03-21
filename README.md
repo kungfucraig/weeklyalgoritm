@@ -2,10 +2,11 @@
 
 # Algorithm of the Day
 
-*7 topics covered*
+*8 topics covered*
 
 ## Topics
 
+- [2026-03-21 — B+ Tree](topics/2026-03-21_b-tree/README.md)
 - [2026-03-17 — Wavelet Tree](topics/2026-03-17_wavelet-tree/README.md)
 - [2026-03-14 — HyperLogLog](topics/2026-03-14_hyperloglog/README.md)
 - [2026-03-10 — Disjoint Set Union (Union-Find)](topics/2026-03-10_disjoint-set-union-union-find/README.md)
