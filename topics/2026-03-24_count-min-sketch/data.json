@@ -1,0 +1,93 @@
+{
+  "topic_name": "Count-Min Sketch",
+  "subject": "Algorithm of the Day: Count-Min Sketch \u2014 Frequency Estimation in Constant Space",
+  "introduction": "Imagine you're building a system that processes billions of events per day \u2014 web requests, network packets, search queries \u2014 and you need to answer questions like \"how many times has this item appeared?\" Keeping exact counts for every distinct item is often infeasible: the cardinality might be in the hundreds of millions, memory is constrained, and you need answers fast. The Count-Min Sketch is a probabilistic data structure that provides approximate frequency estimates using dramatically less memory than exact counting, with mathematically bounded error guarantees.\n\nIntroduced by Graham Cormode and S. Muthukrishnan in 2005, the Count-Min Sketch belongs to the family of streaming or sketch data structures designed for the data stream model, where elements arrive one at a time and you cannot afford to store or revisit the entire input. Unlike a hash map that gives exact answers, a Count-Min Sketch trades a small, controllable amount of accuracy for enormous savings in space. It only over-estimates frequencies (never under-estimates), which makes it particularly useful in settings where false positives are tolerable but false negatives are not.\n\nWhat makes the Count-Min Sketch especially elegant is its simplicity: it's essentially a two-dimensional array of counters with multiple hash functions \u2014 conceptually similar to a Bloom filter, but for counting rather than membership testing. Despite this simplicity, it has found its way into production systems at massive scale, from network traffic monitoring at Cisco to query optimization in Apache Spark, and from trending topic detection at Twitter to frequency estimation in database engines like PostgreSQL.",
+  "how_it_works": [
+    {
+      "type": "text",
+      "content": "A Count-Min Sketch consists of a 2D array of counters with dimensions d \u00d7 w, where d is the number of hash functions (rows) and w is the width of each row (number of columns). The parameters are chosen based on desired accuracy: w = \u2308e/\u03b5\u2309 and d = \u2308ln(1/\u03b4)\u2309, where \u03b5 controls the error margin and \u03b4 controls the probability of exceeding that error. Each of the d rows is associated with an independent pairwise hash function that maps items to columns in the range [0, w-1]. All counters are initialized to zero."
+    },
+    {
+      "type": "diagram",
+      "caption": "Count-Min Sketch structure: d rows \u00d7 w columns with d independent hash functions",
+      "content": "                     w columns\n            0     1     2     3     4     5     6\n          +-----+-----+-----+-----+-----+-----+-----+\n  h1(x) ->|  0  |  0  |  0  |  0  |  0  |  0  |  0  |  Row 0\n          +-----+-----+-----+-----+-----+-----+-----+\n  h2(x) ->|  0  |  0  |  0  |  0  |  0  |  0  |  0  |  Row 1\n          +-----+-----+-----+-----+-----+-----+-----+\n  h3(x) ->|  0  |  0  |  0  |  0  |  0  |  0  |  0  |  Row 2\n          +-----+-----+-----+-----+-----+-----+-----+\n  h4(x) ->|  0  |  0  |  0  |  0  |  0  |  0  |  0  |  Row 3\n          +-----+-----+-----+-----+-----+-----+-----+\n\n  Each hash function h_i maps an item to one column per row."
+    },
+    {
+      "type": "text",
+      "content": "To INSERT (or update) an item x with a count of c (typically c=1 for each occurrence), you compute h_i(x) for each row i from 0 to d-1, and increment the counter at position [i, h_i(x)] by c. This is an O(d) operation, and since d is a small constant determined at initialization time, insertion is effectively O(1). Multiple different items may hash to the same cell (a collision), which causes over-counting \u2014 this is the fundamental source of approximation error."
+    },
+    {
+      "type": "diagram",
+      "caption": "Inserting item 'apple' (count += 1): each hash maps to one cell per row",
+      "content": "  Item: 'apple'\n  h1('apple') = 2,  h2('apple') = 5,  h3('apple') = 1,  h4('apple') = 4\n\n            0     1     2     3     4     5     6\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 0   |  0  |  0  | [1] |  0  |  0  |  0  |  0  |  <-- increment col 2\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 1   |  0  |  0  |  0  |  0  |  0  | [1] |  0  |  <-- increment col 5\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 2   |  0  | [1] |  0  |  0  |  0  |  0  |  0  |  <-- increment col 1\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 3   |  0  |  0  |  0  |  0  | [1] |  0  |  0  |  <-- increment col 4\n          +-----+-----+-----+-----+-----+-----+-----+"
+    },
+    {
+      "type": "text",
+      "content": "To QUERY the estimated frequency of an item x, you compute h_i(x) for each row, retrieve the counter at [i, h_i(x)], and return the MINIMUM of all d values. The key insight is that each counter may be inflated by collisions from other items, but it can never be less than the true count. By taking the minimum across d independent hash functions, you significantly reduce the chance that all d counters are simultaneously inflated by a large amount. Formally, the estimate f\u0302(x) satisfies: f(x) \u2264 f\u0302(x) \u2264 f(x) + \u03b5\u00b7N with probability at least 1-\u03b4, where f(x) is the true frequency and N is the total count of all items."
+    },
+    {
+      "type": "diagram",
+      "caption": "Querying item 'apple' after more insertions \u2014 take the minimum across rows",
+      "content": "  After inserting: apple x3, banana x2, cherry x1, date x1\n\n            0     1     2     3     4     5     6\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 0   |  1  |  0  | [4] |  0  |  2  |  0  |  0  |\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 1   |  0  |  1  |  2  |  0  |  0  | [3] |  1  |\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 2   |  0  | [3] |  0  |  1  |  1  |  2  |  0  |\n          +-----+-----+-----+-----+-----+-----+-----+\n  Row 3   |  2  |  0  |  0  |  1  | [3] |  0  |  1  |\n          +-----+-----+-----+-----+-----+-----+-----+\n\n  Query 'apple': counters = [4, 3, 3, 3]\n  Estimate = min(4, 3, 3, 3) = 3   (true count = 3)  Exact!"
+    },
+    {
+      "type": "text",
+      "content": "An important property of the Count-Min Sketch is that it is mergeable: two sketches built with the same hash functions and dimensions can be combined by element-wise addition of their counter arrays. This makes it ideal for distributed systems where each node maintains a local sketch and periodically merges with a central aggregator. Additionally, the sketch supports deletion by decrementing counters (called Count-Min-Log or conservative update variants), though plain deletion can lead to negative bias. The conservative update optimization only increments a counter if it is currently the minimum, which reduces over-estimation in practice."
+    }
+  ],
+  "example": {
+    "description": "Let's build a Count-Min Sketch from scratch and use it to estimate word frequencies in a stream of text. We'll simulate a scenario where we're tracking the frequency of words in a stream of 100,000 tokens, then compare our estimates against the true counts to see how close the approximations are. We'll use \u03b5=0.001 and \u03b4=0.01, meaning we want the error to be at most 0.1% of total stream size, with 99% confidence.",
+    "code": "import hashlib\nimport random\nimport math\nfrom collections import Counter\n\nclass CountMinSketch:\n    def __init__(self, epsilon, delta):\n        \"\"\"Initialize with error rate epsilon and failure probability delta.\"\"\"\n        self.w = math.ceil(math.e / epsilon)     # width of each row\n        self.d = math.ceil(math.log(1.0 / delta)) # number of rows (hash functions)\n        self.table = [[0] * self.w for _ in range(self.d)]\n        self.total = 0\n        # Generate random seeds for each hash function\n        self.seeds = [random.randint(0, 2**32 - 1) for _ in range(self.d)]\n        print(f\"Sketch dimensions: {self.d} rows x {self.w} cols\")\n        print(f\"Total counters: {self.d * self.w}\")\n        print(f\"Memory: ~{self.d * self.w * 4 / 1024:.1f} KB (4 bytes/counter)\")\n\n    def _hash(self, item, seed):\n        \"\"\"Hash an item with a given seed to a column index.\"\"\"\n        # Use MD5 for simplicity; production systems use faster hashes\n        h = hashlib.md5(f\"{seed}:{item}\".encode()).hexdigest()\n        return int(h, 16) % self.w\n\n    def add(self, item, count=1):\n        \"\"\"Add an item to the sketch with an optional count.\"\"\"\n        self.total += count\n        for i in range(self.d):\n            col = self._hash(item, self.seeds[i])\n            self.table[i][col] += count\n\n    def query(self, item):\n        \"\"\"Estimate the frequency of an item (returns min across all rows).\"\"\"\n        estimates = []\n        for i in range(self.d):\n            col = self._hash(item, self.seeds[i])\n            estimates.append(self.table[i][col])\n        return min(estimates)\n\n    def merge(self, other):\n        \"\"\"Merge another sketch into this one (must have same dimensions/seeds).\"\"\"\n        assert self.w == other.w and self.d == other.d\n        for i in range(self.d):\n            for j in range(self.w):\n                self.table[i][j] += other.table[i][j]\n        self.total += other.total\n\n\n# --- Demonstration ---\nrandom.seed(42)\n\n# Create a Zipfian-like word distribution (realistic for natural language)\nwords = [f\"word_{i}\" for i in range(5000)]\nweights = [1.0 / (i + 1) for i in range(5000)]  # Zipf's law\ntotal_weight = sum(weights)\nprobs = [w / total_weight for w in weights]\n\n# Generate a stream of 100,000 tokens\nstream = random.choices(words, weights=probs, k=100000)\n\n# Build exact counts for comparison\nexact_counts = Counter(stream)\n\n# Build Count-Min Sketch with epsilon=0.001, delta=0.01\ncms = CountMinSketch(epsilon=0.001, delta=0.01)\nfor token in stream:\n    cms.add(token)\n\n# Compare estimates vs true counts for top-20 most frequent words\nprint(\"\\n{:<15} {:>10} {:>10} {:>10}\".format(\n    \"Word\", \"True\", \"Estimate\", \"Error\"))\nprint(\"-\" * 48)\n\nerrors = []\nfor word, true_count in exact_counts.most_common(20):\n    estimate = cms.query(word)\n    error = estimate - true_count  # Always >= 0\n    errors.append(error)\n    print(\"{:<15} {:>10} {:>10} {:>10}\".format(\n        word, true_count, estimate, f\"+{error}\"))\n\n# Overall statistics across ALL words\nall_errors = []\nfor word in exact_counts:\n    est = cms.query(word)\n    all_errors.append(est - exact_counts[word])\n\nprint(f\"\\n--- Overall Statistics ---\")\nprint(f\"Total stream items: {cms.total}\")\nprint(f\"Distinct items: {len(exact_counts)}\")\nprint(f\"Mean absolute error: {sum(all_errors)/len(all_errors):.2f}\")\nprint(f\"Max error: {max(all_errors)}\")\nprint(f\"Error bound (epsilon * N): {0.001 * 100000:.0f}\")\nprint(f\"Items within error bound: {sum(1 for e in all_errors if e <= 100)}/{len(all_errors)}\")"
+  },
+  "complexity": {
+    "summary": "The Count-Min Sketch achieves constant-time operations with space that depends only on the desired accuracy, not on the number of distinct items. Specifically, insertion and query each require d hash computations, where d = O(ln(1/\u03b4)), and the total space is O((1/\u03b5) \u00b7 ln(1/\u03b4)) counters. For fixed accuracy parameters, all operations are O(1). The mergeability of two sketches takes O(w\u00b7d) time, which is proportional to the sketch size. This makes the Count-Min Sketch particularly attractive for streaming and distributed settings where both time and space must be carefully controlled.",
+    "time": {
+      "best": "O(d) per operation \u2014 effectively O(1) for fixed accuracy parameters",
+      "average": "O(d) per operation \u2014 same for insert, query, and point delete",
+      "worst": "O(d) per operation \u2014 no worst-case degradation beyond the fixed d hash computations"
+    },
+    "space": "O(w \u00d7 d) = O((1/\u03b5) \u00b7 ln(1/\u03b4)) counters, independent of stream length or number of distinct items"
+  },
+  "use_cases": [
+    "Network traffic monitoring and heavy-hitter detection: ISPs and CDNs use Count-Min Sketches to identify the most frequent source IPs, detect DDoS attacks, and monitor bandwidth usage per flow without storing per-flow state for millions of connections.",
+    "Database query optimization: Systems like Apache Spark, PostgreSQL, and Google's Dremel use frequency sketches to estimate value distributions and selectivity, helping the query planner choose efficient join strategies and index usage.",
+    "Real-time trending and analytics: Social media platforms like Twitter use Count-Min Sketches to detect trending hashtags and topics from firehose streams, where maintaining exact counts for millions of terms would be prohibitively expensive.",
+    "Natural language processing and text mining: Count-Min Sketches serve as memory-efficient replacements for frequency dictionaries when building n-gram language models, computing pointwise mutual information, or performing feature hashing in large-scale ML pipelines.",
+    "Click fraud and anomaly detection: Ad-tech platforms use streaming frequency sketches to flag anomalous click patterns in real time, identifying IPs or user agents with suspiciously high activity without maintaining full click logs in memory."
+  ],
+  "references": [
+    {
+      "title": "An Improved Data Stream Summary: The Count-Min Sketch and its Applications",
+      "authors": "Graham Cormode, S. Muthukrishnan",
+      "url": "https://www.cs.rutgers.edu/~muthu/cm-latin.pdf",
+      "description": "The original 2005 paper introducing the Count-Min Sketch with full theoretical analysis and applications to point queries, range queries, and inner products."
+    },
+    {
+      "title": "Count-Min Sketch \u2014 Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch",
+      "description": "A well-maintained overview of the data structure, its variants, and theoretical properties."
+    },
+    {
+      "title": "Approximating Data with the Count-Min Data Structure",
+      "authors": "Graham Cormode, S. Muthukrishnan",
+      "url": "http://dimacs.rutgers.edu/~graham/pubs/papers/cmencyc.pdf",
+      "description": "An accessible survey article by the original authors covering practical aspects and extensions of the Count-Min Sketch."
+    },
+    {
+      "title": "Sketch of the Day: Count-Min Sketch",
+      "authors": "Aggregate Knowledge (blog)",
+      "description": "A practitioner-focused blog post explaining the intuition, implementation considerations, and real-world deployment of Count-Min Sketches."
+    },
+    {
+      "title": "Mining of Massive Datasets (Chapter 4: Mining Data Streams)",
+      "authors": "Jure Leskovec, Anand Rajaraman, Jeffrey D. Ullman",
+      "url": "http://www.mmds.org/",
+      "description": "A comprehensive textbook chapter covering streaming algorithms including Count-Min Sketch, with practical examples and exercises."
+    },
+    {
+      "title": "Probabilistic Data Structures and Algorithms for Big Data Applications",
+      "authors": "Andrii Gakhov",
+      "description": "A book dedicated to probabilistic data structures including Count-Min Sketch, Bloom filters, and HyperLogLog, with implementation details and comparisons."
+    }
+  ]
+}
