@@ -1,0 +1,93 @@
+{
+  "topic_name": "Splay Tree",
+  "subject": "Algorithm of the Day: Splay Trees \u2014 Self-Optimizing BSTs",
+  "introduction": "The Splay Tree, invented by Daniel Sleator and Robert Tarjan in 1985, is one of the most elegant self-adjusting binary search trees ever devised. Unlike AVL trees or red-black trees that maintain strict balance invariants, a splay tree takes a radically different approach: every time you access a node, you rotate it all the way to the root through a specific sequence of operations called 'splaying.' There are no balance factors, no color bits, no extra bookkeeping \u2014 just a simple restructuring rule applied on every access.\n\nWhat makes splay trees fascinating is their amortized efficiency guarantee: any sequence of m operations on an n-node splay tree takes O(m log n) total time, giving O(log n) amortized cost per operation \u2014 even though individual operations can take O(n) in the worst case. But the real magic goes deeper. Splay trees have a remarkable property called the 'working set' property: if you repeatedly access a small subset of elements, those elements migrate to the top of the tree, making subsequent accesses extremely fast. This means splay trees automatically adapt to your access pattern without any explicit tuning.\n\nThis self-optimizing behavior makes splay trees surprisingly practical. They've been used in garbage collectors, network routers, memory allocators, and even inside the Windows NT kernel. The persistent conjecture (still unproven!) that splay trees are 'dynamically optimal' \u2014 meaning they perform within a constant factor of any other BST algorithm on every access sequence \u2014 keeps them at the frontier of theoretical computer science as well.",
+  "how_it_works": [
+    {
+      "type": "text",
+      "content": "A splay tree is a binary search tree where the core operation is 'splaying' \u2014 moving a target node to the root via a series of tree rotations. The key insight is that splaying doesn't just use simple single rotations (which can lead to poor amortized performance). Instead, it uses three carefully chosen cases based on the relationship between the target node (x), its parent (p), and its grandparent (g). These cases are: Zig, Zig-Zig, and Zig-Zag."
+    },
+    {
+      "type": "text",
+      "content": "**Zig (terminal case):** When x's parent p is the root, perform a single rotation to bring x to the root. This only happens as the last step of a splay operation when the tree has an even depth path.\n\n**Zig-Zig:** When x and p are both left children (or both right children) of their respective parents, first rotate p around g, then rotate x around p. This double rotation in the same direction is what distinguishes splaying from naive 'rotate to root' \u2014 it has the critical effect of halving the depth of nodes along the access path.\n\n**Zig-Zag:** When x is a left child and p is a right child (or vice versa), rotate x around p, then rotate x around g. This is essentially a double rotation similar to AVL tree rebalancing."
+    },
+    {
+      "type": "diagram",
+      "caption": "Zig-Zig case: x and p are both left children",
+      "content": "  Before:                 After:\n\n       g                   x\n      / \\                 / \\\n     p   D               A   p\n    / \\                     / \\\n   x   C                   B   g\n  / \\                         / \\\n A   B                       C   D\n\n Step 1: Rotate p around g\n Step 2: Rotate x around p"
+    },
+    {
+      "type": "diagram",
+      "caption": "Zig-Zag case: x is right child of p, p is left child of g",
+      "content": "  Before:                 After:\n\n       g                   x\n      / \\                /   \\\n     p   D              p     g\n    / \\                / \\   / \\\n   A   x              A   B C   D\n      / \\\n     B   C\n\n Step 1: Rotate x around p\n Step 2: Rotate x around g"
+    },
+    {
+      "type": "text",
+      "content": "All standard BST operations \u2014 search, insert, delete \u2014 are built on top of the splay operation. To **search** for a key, perform a normal BST search and then splay the found node (or the last node visited if not found) to the root. To **insert**, insert the new node as in a normal BST and then splay it to the root. To **delete**, splay the target node to the root, remove it, then splay the largest element in the left subtree to become the new root and attach the right subtree to it."
+    },
+    {
+      "type": "text",
+      "content": "The reason the zig-zig case is so important can be understood intuitively: when a node is accessed deep in the tree, the zig-zig rotations roughly halve the depth of every node on the path from the root to the accessed node. This means that even if one access is expensive (reaching deep into the tree), it restructures the tree so that future accesses are cheaper. This 'pay it forward' behavior is what gives splay trees their O(log n) amortized bound, proven rigorously using a potential function argument."
+    },
+    {
+      "type": "diagram",
+      "caption": "Example: splaying node 1 in a degenerate right-leaning tree",
+      "content": "  Initial:       After splay(1):\n\n  5                   1\n   \\                   \\\n    4                   3\n     \\                 / \\\n      3               2   5\n       \\                 /\n        2               4\n         \\\n          1\n\n  The deep path is compressed!\n  Tree height reduced from 5 to 3."
+    }
+  ],
+  "example": {
+    "description": "Let's implement a splay tree that supports insert, search, and in-order traversal. We'll insert the values [5, 4, 3, 2, 1] (which would create a degenerate tree in a naive BST) and then search for various elements to demonstrate how the tree self-adjusts. After each operation, the accessed node becomes the new root, keeping frequently accessed elements near the top.",
+    "code": "class Node:\n    def __init__(self, key):\n        self.key = key\n        self.left = None\n        self.right = None\n\nclass SplayTree:\n    def __init__(self):\n        self.root = None\n\n    def _right_rotate(self, x):\n        \"\"\"Rotate x's left child up (right rotation around x).\"\"\"\n        y = x.left\n        x.left = y.right\n        y.right = x\n        return y\n\n    def _left_rotate(self, x):\n        \"\"\"Rotate x's right child up (left rotation around x).\"\"\"\n        y = x.right\n        x.right = y.left\n        y.left = x\n        return y\n\n    def _splay(self, root, key):\n        \"\"\"Splay the tree rooted at 'root' so that the node with 'key'\n        (or the last accessed node) becomes the new root.\n        Uses top-down splaying for simplicity.\"\"\"\n        if root is None or root.key == key:\n            return root\n\n        # Key lies in left subtree\n        if key < root.key:\n            if root.left is None:\n                return root\n\n            # Zig-Zig (left-left): key < root.left.key\n            if key < root.left.key:\n                # Recursively bring key to root.left.left\n                root.left.left = self._splay(root.left.left, key)\n                # First rotation: rotate root right\n                root = self._right_rotate(root)\n\n            # Zig-Zag (left-right): key > root.left.key\n            elif key > root.left.key:\n                # Recursively bring key to root.left.right\n                root.left.right = self._splay(root.left.right, key)\n                # First rotation: left rotate root.left\n                if root.left.right is not None:\n                    root.left = self._left_rotate(root.left)\n\n            # Second rotation (Zig step): rotate root right\n            if root.left is None:\n                return root\n            else:\n                return self._right_rotate(root)\n\n        else:  # Key lies in right subtree\n            if root.right is None:\n                return root\n\n            # Zig-Zig (right-right): key > root.right.key\n            if key > root.right.key:\n                root.right.right = self._splay(root.right.right, key)\n                root = self._left_rotate(root)\n\n            # Zig-Zag (right-left): key < root.right.key\n            elif key < root.right.key:\n                root.right.left = self._splay(root.right.left, key)\n                if root.right.left is not None:\n                    root.right = self._right_rotate(root.right)\n\n            if root.right is None:\n                return root\n            else:\n                return self._left_rotate(root)\n\n    def insert(self, key):\n        \"\"\"Insert a key and splay it to the root.\"\"\"\n        if self.root is None:\n            self.root = Node(key)\n            return\n\n        # Splay the closest node to root\n        self.root = self._splay(self.root, key)\n\n        if self.root.key == key:\n            return  # Duplicate key, do nothing\n\n        new_node = Node(key)\n        if key < self.root.key:\n            new_node.right = self.root\n            new_node.left = self.root.left\n            self.root.left = None\n        else:\n            new_node.left = self.root\n            new_node.right = self.root.right\n            self.root.right = None\n\n        self.root = new_node\n\n    def search(self, key):\n        \"\"\"Search for a key; splay it (or last visited) to root.\"\"\"\n        self.root = self._splay(self.root, key)\n        if self.root and self.root.key == key:\n            return True\n        return False\n\n    def inorder(self, node=None, result=None):\n        \"\"\"In-order traversal to verify BST property.\"\"\"\n        if result is None:\n            result = []\n            node = self.root\n        if node:\n            self.inorder(node.left, result)\n            result.append(node.key)\n            self.inorder(node.right, result)\n        return result\n\n    def print_tree(self, node=None, level=0, prefix=\"Root: \"):\n        \"\"\"Pretty print the tree structure.\"\"\"\n        if node is None and level == 0:\n            node = self.root\n        if node is not None:\n            print(\" \" * (level * 4) + prefix + str(node.key))\n            if node.left or node.right:\n                if node.left:\n                    self.print_tree(node.left, level + 1, \"L--- \")\n                else:\n                    print(\" \" * ((level + 1) * 4) + \"L--- (nil)\")\n                if node.right:\n                    self.print_tree(node.right, level + 1, \"R--- \")\n                else:\n                    print(\" \" * ((level + 1) * 4) + \"R--- (nil)\")\n\n\n# --- Demo ---\ntree = SplayTree()\n\n# Insert values that would create a degenerate tree in naive BST\nfor val in [5, 4, 3, 2, 1]:\n    tree.insert(val)\n    print(f\"After inserting {val}, root = {tree.root.key}\")\n\nprint(\"\\nTree structure after all inserts:\")\ntree.print_tree()\nprint(f\"In-order: {tree.inorder()}\")\n\n# Search for 5 \u2014 it will be splayed to root\nprint(f\"\\nSearch for 5: {tree.search(5)}\")\nprint(f\"Root is now: {tree.root.key}\")\ntree.print_tree()\n\n# Search for 3 \u2014 it will be splayed to root\nprint(f\"\\nSearch for 3: {tree.search(3)}\")\nprint(f\"Root is now: {tree.root.key}\")\ntree.print_tree()\n\n# Demonstrate working-set property: repeated access is fast\nprint(\"\\n--- Accessing 3 repeatedly keeps it at root ---\")\nfor _ in range(3):\n    tree.search(3)\n    print(f\"Root after searching 3: {tree.root.key}\")"
+  },
+  "complexity": {
+    "summary": "Splay trees provide O(log n) amortized time for all operations (search, insert, delete) over any sequence of m operations on n keys, giving a total cost of O(m log n). Individual operations can be O(n) in the worst case (e.g., accessing the deepest node in a degenerate tree), but the splaying operation restructures the tree to prevent repeated worst-case behavior. Space usage is O(n) with no extra fields needed beyond the standard BST pointers \u2014 no balance factors, colors, or priorities. The static optimality theorem guarantees that splay trees perform within a constant factor of the optimal static BST for any given access sequence, and the unproven dynamic optimality conjecture posits they match any online BST algorithm.",
+    "time": {
+      "best": "O(1) \u2014 accessing the root",
+      "average": "O(log n) amortized",
+      "worst": "O(n) per operation, O(m log n) amortized for m operations"
+    },
+    "space": "O(n)"
+  },
+  "use_cases": [
+    "Cache-like data structures: Splay trees naturally keep recently and frequently accessed items near the root, making them ideal when access patterns exhibit temporal locality (e.g., in memory allocators or LRU-like caches).",
+    "Network routing and IP lookup: Cisco's implementation of certain routing table structures has used splay trees to optimize for frequently accessed routes, exploiting the working-set property.",
+    "Garbage collectors and runtime systems: Splay trees have been used in garbage collector implementations (e.g., in some versions of the Boehm GC) for managing memory blocks, where recently allocated or freed blocks are accessed frequently.",
+    "Text editors and sequence operations: Because splay trees support efficient split and join operations in O(log n) amortized time, they're useful for implementing sequences that require frequent concatenation, splitting, and random access \u2014 similar to ropes but with self-adjusting behavior.",
+    "Compiler optimizations: Some compilers use splay trees in symbol table implementations where certain variables are referenced far more frequently than others, benefiting from the automatic adaptation to access frequency."
+  ],
+  "references": [
+    {
+      "title": "Self-Adjusting Binary Search Trees",
+      "authors": "Daniel D. Sleator, Robert E. Tarjan",
+      "url": "https://www.cs.cmu.edu/~sleator/papers/self-adjusting.pdf",
+      "description": "The original 1985 JACM paper introducing splay trees, proving their amortized O(log n) bounds and several optimality properties."
+    },
+    {
+      "title": "Splay tree \u2014 Wikipedia",
+      "url": "https://en.wikipedia.org/wiki/Splay_tree",
+      "description": "Comprehensive overview of splay tree operations, analysis, and variants with clear diagrams and references."
+    },
+    {
+      "title": "Data Structures and Algorithm Analysis in C++ (4th Edition)",
+      "authors": "Mark Allen Weiss",
+      "description": "A widely-used textbook that includes an excellent chapter on splay trees with clear explanations of top-down splaying."
+    },
+    {
+      "title": "Open Data Structures \u2014 Chapter 8: Scapegoat Trees and Splay Trees",
+      "authors": "Pat Morin",
+      "url": "https://opendatastructures.org/ods-java/8_Scapegoat_Trees.html",
+      "description": "Free online textbook with a rigorous yet accessible treatment of splay trees including potential function analysis."
+    },
+    {
+      "title": "Dynamic Optimality \u2014 Almost (SIAM Journal on Computing)",
+      "authors": "Erik D. Demaine, Dion Harmon, John Iacono, Mihai P\u0103tra\u0219cu",
+      "url": "https://erikdemaine.org/papers/Tango_SICOMP/paper.pdf",
+      "description": "Introduces Tango trees and discusses the dynamic optimality conjecture for splay trees, achieving O(log log n) competitive ratio."
+    },
+    {
+      "title": "An Introduction to Algorithms (CLRS), 3rd Edition \u2014 Problem 13-2",
+      "authors": "Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, Clifford Stein",
+      "description": "The classic algorithms textbook includes splay trees as an advanced exercise with guidance on the amortized analysis using potential functions."
+    }
+  ]
+}
